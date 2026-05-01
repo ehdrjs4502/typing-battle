@@ -158,20 +158,34 @@ export class GameGateway implements OnGatewayDisconnect {
     const info = this.socketMap.get(client.id);
     if (!info) return;
 
-    const rank = this.gameService.recordFinish(info.roomId, info.userId);
+    const result = this.gameService.recordFinish(
+      info.roomId,
+      info.userId,
+      info.nickname,
+      payload,
+    );
+    if (!result) return;
 
-    this.server.to(info.roomId).emit(SOCKET_EVENTS.PLAYER_FINISHED, {
-      userId: info.userId,
-      nickname: info.nickname,
-      rank,
-      ...payload,
-    });
+    this.server.to(info.roomId).emit(SOCKET_EVENTS.PLAYER_FINISHED, result);
 
     if (this.gameService.isGameOver(info.roomId)) {
-      const room = this.gameService.endGame(info.roomId);
-      if (room) {
+      const ended = this.gameService.endGame(info.roomId);
+      if (ended) {
         await this.roomsService.updateStatus(info.roomId, 'FINISHED');
-        this.server.to(info.roomId).emit(SOCKET_EVENTS.GAME_END, { results: [] });
+        // DB 의 GameResult 모델은 nickname 컬럼이 없으므로 빼고 저장
+        await this.roomsService.saveResults(
+          info.roomId,
+          ended.results.map(({ userId, rank, wpm, accuracy, timeMs }) => ({
+            userId,
+            rank,
+            wpm,
+            accuracy,
+            timeMs,
+          })),
+        );
+        this.server
+          .to(info.roomId)
+          .emit(SOCKET_EVENTS.GAME_END, { results: ended.results });
       }
     }
   }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Player, Room } from '@typing-battle/shared';
+import { GameResult, Player, Room } from '@typing-battle/shared';
 import { RoomsService } from '../rooms/rooms.service';
 
 const TEXTS = [
@@ -14,7 +14,8 @@ const TEXTS = [
 export class GameService {
   // 인메모리 방 상태 (게임 진행 중 데이터)
   private rooms = new Map<string, Room>();
-  private finishOrder = new Map<string, string[]>(); // roomId → userId[]
+  // roomId → 완주한 플레이어 결과 배열 (push 순서 == 등수)
+  private results = new Map<string, GameResult[]>();
 
   constructor(private roomsService: RoomsService) {}
 
@@ -75,32 +76,50 @@ export class GameService {
     const room = this.rooms.get(roomId);
     if (!room) return null;
     room.status = 'PLAYING';
-    this.finishOrder.set(roomId, []);
+    this.results.set(roomId, []);
     const text = TEXTS[Math.floor(Math.random() * TEXTS.length)];
     return { room, text };
   }
 
-  recordFinish(roomId: string, userId: string): number {
-    const order = this.finishOrder.get(roomId) ?? [];
-    if (!order.includes(userId)) order.push(userId);
-    this.finishOrder.set(roomId, order);
-    return order.length; // rank
+  recordFinish(
+    roomId: string,
+    userId: string,
+    nickname: string,
+    stats: { wpm: number; accuracy: number; timeMs: number },
+  ): GameResult | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    const list = this.results.get(roomId) ?? [];
+    // 중복 호출 방어 (typing_complete 가 두 번 들어와도 등수 꼬이지 않도록)
+    const existing = list.find((r) => r.userId === userId);
+    if (existing) return existing;
+
+    const result: GameResult = {
+      userId,
+      nickname,
+      rank: list.length + 1,
+      ...stats,
+    };
+    list.push(result);
+    this.results.set(roomId, list);
+    return result;
   }
 
   isGameOver(roomId: string): boolean {
     const room = this.rooms.get(roomId);
-    const order = this.finishOrder.get(roomId) ?? [];
+    const list = this.results.get(roomId) ?? [];
     if (!room) return false;
-    return order.length >= room.players.length;
+    return list.length >= room.players.length;
   }
 
-  endGame(roomId: string): Room | null {
+  endGame(roomId: string): { room: Room; results: GameResult[] } | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
     room.status = 'FINISHED';
+    const results = this.results.get(roomId) ?? [];
     this.rooms.delete(roomId);
-    this.finishOrder.delete(roomId);
-    return room;
+    this.results.delete(roomId);
+    return { room, results };
   }
 
   getRoom(roomId: string): Room | undefined {
