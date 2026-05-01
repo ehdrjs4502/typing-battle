@@ -15,7 +15,7 @@ Turborepo + pnpm workspace 모노레포입니다.
 
 - `apps/web` — Next.js 16 (App Router, React 19, Tailwind v4, Zustand). 클라이언트.
 - `apps/api` — Nest.js 11 + Prisma 6 + Socket.IO. 서버.
-- `packages/shared` — 클라이언트/서버가 공유하는 타입과 소켓 이벤트 상수 (`@typing-battle/shared`). 소스를 직접 export (빌드 단계 없음).
+- `packages/shared` — 클라이언트/서버가 공유하는 타입과 소켓 이벤트 상수 (`@typing-battle/shared`). `tsc` 로 `dist/` 에 빌드되며 컨슈머는 컴파일된 결과를 import.
 
 `apps/web/AGENTS.md`는 "이 Next.js는 breaking change가 있는 새 버전이니 코드 작성 전 `node_modules/next/dist/docs/` 의 가이드를 먼저 읽어라"고 명시합니다. Next.js 관련 작업 시 이 지시를 따르세요.
 
@@ -116,7 +116,9 @@ pnpm exec prisma studio                        # GUI
 
 ### 공유 타입 패키지
 
-`packages/shared` 는 빌드하지 않고 `main`/`types`/`exports` 가 모두 `./src/index.ts` 를 가리킵니다 — 워크스페이스 컨슈머는 TS 소스를 직접 import 합니다. 따라서 별도 빌드 단계가 없고, 타입을 바꾸면 양쪽이 즉시 영향을 받습니다.
+`packages/shared` 는 `tsc` 로 `dist/` 에 CommonJS + `.d.ts` 를 빌드합니다. `package.json` 의 `main`/`types`/`exports` 가 모두 `./dist/...` 를 가리킵니다. 처음에는 무빌드로 `./src/index.ts` 를 직접 export 했지만, Node 22 의 native TS 로더가 ESM 해석 시 상대 경로에 명시적 확장자(`.ts`)를 요구해서 런타임 에러가 났고, TS 의 `allowImportingTsExtensions` 는 `noEmit` 과 충돌해 양립이 어려웠습니다. 그래서 표준적인 빌드 단계를 두는 쪽으로 정리했습니다.
+
+`turbo.json` 의 `dev` 태스크가 `dependsOn: ["^build"]` 라서 `pnpm dev` 시 shared 가 먼저 한 번 빌드된 뒤 api/web 의 watch 가 시작됩니다. shared 의 타입을 수정한 경우엔 `pnpm --filter @typing-battle/shared build` 를 다시 돌려야 api/web 이 변경을 봅니다.
 
 ## 자주 헷갈리는 Nest.js 개념 (백엔드 학습 메모)
 
