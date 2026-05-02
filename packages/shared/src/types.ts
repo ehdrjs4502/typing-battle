@@ -14,6 +14,7 @@ export interface Room {
   status: RoomStatus;
   maxPlayers: number;
   players: Player[];
+  currentText?: string;
 }
 
 export interface GameResult {

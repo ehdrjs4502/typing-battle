@@ -58,11 +58,11 @@ export class GameService {
     return room;
   }
 
-  setPlayerReady(roomId: string, userId: string): Room | null {
+  togglePlayerReady(roomId: string, userId: string): Room | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
     const player = room.players.find((p) => p.id === userId);
-    if (player) player.isReady = true;
+    if (player) player.isReady = !player.isReady;
     return room;
   }
 
@@ -78,7 +78,17 @@ export class GameService {
     room.status = 'PLAYING';
     this.results.set(roomId, []);
     const text = TEXTS[Math.floor(Math.random() * TEXTS.length)];
+    room.currentText = text;
     return { room, text };
+  }
+
+  setRoomHost(roomId: string, userId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    room.hostId = userId;
+    room.players.forEach((p) => {
+      p.isHost = p.id === userId;
+    });
   }
 
   recordFinish(

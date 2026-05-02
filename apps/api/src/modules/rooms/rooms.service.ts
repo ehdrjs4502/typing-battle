@@ -29,6 +29,10 @@ export class RoomsService {
     return this.prisma.room.update({ where: { id }, data: { status } });
   }
 
+  async delete(id: string) {
+    await this.prisma.room.delete({ where: { id } }).catch(() => null);
+  }
+
   async saveResults(
     roomId: string,
     results: { userId: string; rank: number; wpm: number; accuracy: number; timeMs: number }[],

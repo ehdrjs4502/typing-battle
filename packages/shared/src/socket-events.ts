@@ -4,7 +4,9 @@ import type { GameResult, Player, Room } from './types';
 export interface ClientToServerEvents {
   join_room: (payload: { roomId: string }) => void;
   leave_room: () => void;
+  // 토글 동작: 호출할 때마다 ready 상태가 뒤집힌다.
   player_ready: () => void;
+  start_game: () => void;
   typing_progress: (payload: { progress: number; wpm: number }) => void;
   typing_complete: (payload: { wpm: number; accuracy: number; timeMs: number }) => void;
 }
@@ -26,6 +28,7 @@ export const SOCKET_EVENTS = {
   JOIN_ROOM: 'join_room',
   LEAVE_ROOM: 'leave_room',
   PLAYER_READY: 'player_ready',
+  START_GAME: 'start_game',
   TYPING_PROGRESS: 'typing_progress',
   TYPING_COMPLETE: 'typing_complete',
   // S → C

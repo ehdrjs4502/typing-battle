@@ -30,7 +30,7 @@ export class GameGateway implements OnGatewayDisconnect {
     private roomsService: RoomsService,
   ) {}
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     const info = this.socketMap.get(client.id);
     if (!info) return;
     this.socketMap.delete(client.id);
@@ -38,6 +38,9 @@ export class GameGateway implements OnGatewayDisconnect {
     const room = this.gameService.removePlayer(info.roomId, info.userId);
     if (room) {
       this.server.to(info.roomId).emit(SOCKET_EVENTS.ROOM_STATE, room);
+    } else {
+      // 방이 비어서 인메모리에서 삭제됨 → DB 에서도 정리
+      await this.roomsService.delete(info.roomId);
     }
   }
 
@@ -69,6 +72,11 @@ export class GameGateway implements OnGatewayDisconnect {
       isHost: dbRoom.hostId === user.sub,
     });
 
+    // DB 방장이 재접속하면 인메모리 방장 상태를 복원 (새로고침 대응)
+    if (dbRoom.hostId === user.sub) {
+      this.gameService.setRoomHost(payload.roomId, user.sub);
+    }
+
     client.join(payload.roomId);
     this.socketMap.set(client.id, {
       userId: user.sub,
@@ -76,12 +84,18 @@ export class GameGateway implements OnGatewayDisconnect {
       roomId: payload.roomId,
     });
 
-    this.server.to(payload.roomId).emit(SOCKET_EVENTS.ROOM_STATE, this.gameService.getRoom(payload.roomId));
+    const currentRoom = this.gameService.getRoom(payload.roomId)!;
+    this.server.to(payload.roomId).emit(SOCKET_EVENTS.ROOM_STATE, currentRoom);
+
+    // 게임 진행 중에 재접속한 경우 해당 클라이언트에게만 텍스트 재전송
+    if (currentRoom.status === 'PLAYING' && currentRoom.currentText) {
+      client.emit(SOCKET_EVENTS.GAME_START, { text: currentRoom.currentText });
+    }
   }
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage(SOCKET_EVENTS.LEAVE_ROOM)
-  handleLeaveRoom(@ConnectedSocket() client: Socket) {
+  async handleLeaveRoom(@ConnectedSocket() client: Socket) {
     const info = this.socketMap.get(client.id);
     if (!info) return;
 
@@ -91,23 +105,29 @@ export class GameGateway implements OnGatewayDisconnect {
     const room = this.gameService.removePlayer(info.roomId, info.userId);
     if (room) {
       this.server.to(info.roomId).emit(SOCKET_EVENTS.ROOM_STATE, room);
+    } else {
+      await this.roomsService.delete(info.roomId);
     }
   }
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage(SOCKET_EVENTS.PLAYER_READY)
-  handlePlayerReady(@ConnectedSocket() client: Socket) {
+  async handlePlayerReady(@ConnectedSocket() client: Socket) {
     const info = this.socketMap.get(client.id);
     if (!info) return;
 
-    const room = this.gameService.setPlayerReady(info.roomId, info.userId);
-    if (room) {
-      this.server.to(info.roomId).emit(SOCKET_EVENTS.ROOM_STATE, room);
+    const room = this.gameService.togglePlayerReady(info.roomId, info.userId);
+    if (!room) return;
+    this.server.to(info.roomId).emit(SOCKET_EVENTS.ROOM_STATE, room);
+
+    // 모두 준비되면 자동으로 카운트다운을 시작한다 (방장의 명시적 시작 버튼이 없어도 진행되도록).
+    if (this.gameService.canStart(info.roomId) && room.status === 'WAITING') {
+      await this.runStartSequence(info.roomId);
     }
   }
 
   @UseGuards(WsJwtGuard)
-  @SubscribeMessage('start_game')
+  @SubscribeMessage(SOCKET_EVENTS.START_GAME)
   async handleStartGame(@ConnectedSocket() client: Socket) {
     const info = this.socketMap.get(client.id);
     if (!info) return;
@@ -120,17 +140,26 @@ export class GameGateway implements OnGatewayDisconnect {
       throw new WsException('모든 플레이어가 준비되어야 합니다.');
     }
 
-    // 카운트다운
+    await this.runStartSequence(info.roomId);
+  }
+
+  private async runStartSequence(roomId: string) {
+    const room = this.gameService.getRoom(roomId);
+    if (!room) return;
+    // 카운트다운 중 중복 시작을 막기 위해 즉시 PLAYING 으로 표시
+    room.status = 'PLAYING';
+    this.server.to(roomId).emit(SOCKET_EVENTS.ROOM_STATE, room);
+
     for (let i = 3; i > 0; i--) {
-      this.server.to(info.roomId).emit(SOCKET_EVENTS.GAME_STARTING, { countdown: i });
+      this.server.to(roomId).emit(SOCKET_EVENTS.GAME_STARTING, { countdown: i });
       await sleep(1000);
     }
 
-    const result = this.gameService.startGame(info.roomId);
+    const result = this.gameService.startGame(roomId);
     if (!result) return;
 
-    await this.roomsService.updateStatus(info.roomId, 'PLAYING');
-    this.server.to(info.roomId).emit(SOCKET_EVENTS.GAME_START, { text: result.text });
+    await this.roomsService.updateStatus(roomId, 'PLAYING');
+    this.server.to(roomId).emit(SOCKET_EVENTS.GAME_START, { text: result.text });
   }
 
   @UseGuards(WsJwtGuard)
