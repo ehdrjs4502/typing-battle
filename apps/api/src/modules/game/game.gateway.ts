@@ -163,6 +163,49 @@ export class GameGateway implements OnGatewayDisconnect {
   }
 
   @UseGuards(WsJwtGuard)
+  @SubscribeMessage(SOCKET_EVENTS.SURRENDER)
+  async handleSurrender(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { timeMs: number },
+  ) {
+    const info = this.socketMap.get(client.id);
+    if (!info) return;
+
+    const result = this.gameService.recordSurrender(
+      info.roomId,
+      info.userId,
+      info.nickname,
+      payload.timeMs,
+    );
+    if (!result) return;
+
+    this.server.to(info.roomId).emit(SOCKET_EVENTS.PLAYER_SURRENDERED, {
+      userId: info.userId,
+      nickname: info.nickname,
+    });
+    // 항복한 플레이어 본인에게 결과 전달
+    this.server.to(info.roomId).emit(SOCKET_EVENTS.PLAYER_FINISHED, result);
+
+    if (this.gameService.isGameOver(info.roomId)) {
+      const ended = this.gameService.endGame(info.roomId);
+      if (ended) {
+        await this.roomsService.updateStatus(info.roomId, 'FINISHED');
+        await this.roomsService.saveResults(
+          info.roomId,
+          ended.results.map(({ userId, rank, wpm, accuracy, timeMs }) => ({
+            userId,
+            rank,
+            wpm,
+            accuracy,
+            timeMs,
+          })),
+        );
+        this.server.to(info.roomId).emit(SOCKET_EVENTS.GAME_END, { results: ended.results });
+      }
+    }
+  }
+
+  @UseGuards(WsJwtGuard)
   @SubscribeMessage(SOCKET_EVENTS.TYPING_PROGRESS)
   handleTypingProgress(
     @ConnectedSocket() client: Socket,

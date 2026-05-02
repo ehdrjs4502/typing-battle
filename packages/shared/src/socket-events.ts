@@ -9,6 +9,7 @@ export interface ClientToServerEvents {
   start_game: () => void;
   typing_progress: (payload: { progress: number; wpm: number }) => void;
   typing_complete: (payload: { wpm: number; accuracy: number; timeMs: number }) => void;
+  surrender: (payload: { timeMs: number }) => void;
 }
 
 // Server → Client 이벤트
@@ -18,6 +19,7 @@ export interface ServerToClientEvents {
   game_start: (payload: { text: string }) => void;
   player_progress: (payload: { userId: string; progress: number; wpm: number }) => void;
   player_finished: (result: GameResult) => void;
+  player_surrendered: (payload: { userId: string; nickname: string }) => void;
   game_end: (payload: { results: GameResult[] }) => void;
   error: (payload: { message: string }) => void;
 }
@@ -31,12 +33,14 @@ export const SOCKET_EVENTS = {
   START_GAME: 'start_game',
   TYPING_PROGRESS: 'typing_progress',
   TYPING_COMPLETE: 'typing_complete',
+  SURRENDER: 'surrender',
   // S → C
   ROOM_STATE: 'room_state',
   GAME_STARTING: 'game_starting',
   GAME_START: 'game_start',
   PLAYER_PROGRESS: 'player_progress',
   PLAYER_FINISHED: 'player_finished',
+  PLAYER_SURRENDERED: 'player_surrendered',
   GAME_END: 'game_end',
   ERROR: 'error',
 } as const;

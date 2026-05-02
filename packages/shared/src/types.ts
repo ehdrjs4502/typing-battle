@@ -24,4 +24,5 @@ export interface GameResult {
   wpm: number;
   accuracy: number;
   timeMs: number;
+  surrendered?: boolean;
 }

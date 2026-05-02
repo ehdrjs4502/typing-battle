@@ -115,6 +115,27 @@ export class GameService {
     return result;
   }
 
+  recordSurrender(roomId: string, userId: string, nickname: string, timeMs: number): GameResult | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+    const list = this.results.get(roomId) ?? [];
+    const existing = list.find((r) => r.userId === userId);
+    if (existing) return existing;
+
+    const result: GameResult = {
+      userId,
+      nickname,
+      rank: list.length + 1,
+      wpm: 0,
+      accuracy: 0,
+      timeMs,
+      surrendered: true,
+    };
+    list.push(result);
+    this.results.set(roomId, list);
+    return result;
+  }
+
   isGameOver(roomId: string): boolean {
     const room = this.rooms.get(roomId);
     const list = this.results.get(roomId) ?? [];
